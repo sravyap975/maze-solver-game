@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Maze Runner - Final Fixed</title>
+    <style>
+        :root {
+            --bg: #0a0a12;
+            --wall: #1a1a2e; /* Dark Blue Walls */
+            --floor: #252545; /* Lighter Floor */
+            --player: #00d2ff;
+            --end: #ff0055;
+            --hint: #39ff14;
+        }
+        body { 
+            background-color: var(--bg); color: white; 
+            font-family: sans-serif; display: flex; flex-direction: column; 
+            align-items: center; margin: 0;
+        }
+        .stats { display: flex; gap: 20px; margin: 20px; font-size: 1.5rem; }
+        #maze { 
+            display: grid; gap: 4px; padding: 10px;
+            background: rgba(255,255,255,0.05); border-radius: 8px;
+        }
+        .cell { width: 35px; height: 35px; border-radius: 4px; }
+        
+        /* THE CRITICAL FIX: Make sure floor and wall look different */
+        .wall { background-color: var(--wall) !important; }
+        .floor { background-color: var(--floor) !important; }
+        
+        .player { 
+            background: var(--player) !important; 
+            box-shadow: 0 0 15px var(--player); border-radius: 50%; transform: scale(0.8);
+        }
+        .end { 
+            background: var(--end) !important; 
+            box-shadow: 0 0 15px var(--end); clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+        }
+        .path-hint { background-color: var(--hint) !important; box-shadow: 0 0 10px var(--hint); }
+        
+        .controls { margin-top: 20px; }
+        button {
+            background: transparent; border: 2px solid var(--player); color: var(--player);
+            padding: 10px 20px; cursor: pointer; border-radius: 5px; font-weight: bold; margin: 5px;
+        }
+        button:hover { background: var(--player); color: black; }
+    </style>
+</head>
+<body>
+
+    <div class="stats">
+        Level: <span id="lvl">1</span> | Time: <span id="timer">30</span>s | Score: <span id="score">0</span>
+    </div>
+
+    <div id="maze"></div>
+
+    <div class="controls">
+        <button onclick="requestHint()">I'm Stuck (Hint)</button>
+        <button onclick="startNewGame(true)">Reset Game</button>
+    </div>
+
+<script>
+    let size = 9; 
+    let player = { r: 1, c: 1 };
+    let end = { r: size - 2, c: size - 2 };
+    let walls = [];
+    let timeLeft = 30;
+    let score = 0;
+    let level = 1;
+    let gameActive = true;
+    let timerInterval;
+
+    function generatePerfectMaze() {
+        // Fill everything with walls (1)
+        walls = Array.from({ length: size }, () => Array(size).fill(1));
+
+        function carve(r, c) {
+            walls[r][c] = 0; // Set current to floor (0)
+            const dirs = [[0, 2], [0, -2], [2, 0], [-2, 0]].sort(() => Math.random() - 0.5);
+            
+            for (let [dr, dc] of dirs) {
+                let nr = r + dr, nc = c + dc;
+                if (nr > 0 && nr < size - 1 && nc > 0 && nc < size - 1 && walls[nr][nc] === 1) {
+                    walls[r + dr/2][c + dc/2] = 0; // Carve path between
+                    carve(nr, nc);
+                }
+            }
+        }
+        carve(1, 1);
+        walls[end.r][end.c] = 0; // Force exit open
+    }
+
+    function draw() {
+        const mazeDiv = document.getElementById("maze");
+        mazeDiv.style.gridTemplateColumns = `repeat(${size}, 35px)`;
+        mazeDiv.innerHTML = "";
+
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                const cell = document.createElement("div");
+                cell.id = `c-${r}-${c}`;
+                // Assign wall or floor based on data
+                cell.className = "cell " + (walls[r][c] === 1 ? "wall" : "floor");
+                
+                if (r === player.r && c === player.c) cell.classList.add("player");
+                else if (r === end.r && c === end.c) cell.classList.add("end");
+                
+                mazeDiv.appendChild(cell);
+            }
+        }
+    }
+
+    function requestHint() {
+        // BFS Pathfinding
+        let queue = [[player.r, player.c, []]];
+        let visited = new Set();
+        visited.add(`${player.r}-${player.c}`);
+
+        while (queue.length > 0) {
+            let [r, c, path] = queue.shift();
+            if (r === end.r && c === end.c) {
+                path.forEach(pos => {
+                    document.getElementById(`c-${pos.r}-${pos.c}`).classList.add("path-hint");
+                });
+                return;
+            }
+
+            [[1,0], [-1,0], [0,1], [0,-1]].forEach(([dr, dc]) => {
+                let nr = r + dr, nc = c + dc;
+                let key = `${nr}-${nc}`;
+                if (nr>=0 && nr<size && nc>=0 && nc<size && walls[nr][nc] === 0 && !visited.has(key)) {
+                    visited.add(key);
+                    queue.push([nr, nc, [...path, {r: nr, c: nc}]]);
+                }
+            });
+        }
+    }
+
+    function startNewGame(resetAll = false) {
+        if(resetAll) { level = 1; score = 0; size = 9; }
+        timeLeft = 30 + (level * 5);
+        player = { r: 1, c: 1 };
+        end = { r: size - 2, c: size - 2 };
+        generatePerfectMaze();
+        draw();
+        updateStats();
+        clearInterval(timerInterval);
+        startTimer();
+        gameActive = true;
+    }
+
+    function startTimer() {
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            document.getElementById("timer").innerText = timeLeft;
+            if (timeLeft <= 0) {
+                gameActive = false;
+                clearInterval(timerInterval);
+                alert("Game Over!");
+                startNewGame(true);
+            }
+        }, 1000);
+    }
+
+    window.addEventListener("keydown", (e) => {
+        if (!gameActive) return;
+        let { r, c } = player;
+        if (e.key === "ArrowUp") r--;
+        else if (e.key === "ArrowDown") r++;
+        else if (e.key === "ArrowLeft") c--;
+        else if (e.key === "ArrowRight") c++;
+        else return;
+
+        if (r >= 0 && r < size && c >= 0 && c < size && walls[r][c] === 0) {
+            player = { r, c };
+            if (r === end.r && c === end.c) {
+                score += 100; level++; size += 2;
+                startNewGame();
+            }
+            draw();
+        }
+    });
+
+    function updateStats() {
+        document.getElementById("lvl").innerText = level;
+        document.getElementById("score").innerText = score;
+    }
+
+    startNewGame(true);
+</script>
+</body>
+</html>
